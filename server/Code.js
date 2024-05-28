@@ -4,9 +4,7 @@ const {Schema,model} = require('mongoose')
 
 const CodeFile = new Schema({
     _id : String,
-    fileName:String,
-    fileExt:String,
-    text: String
+    data:Object,
 })
 
 module.exports = model("CodeFile",CodeFile)

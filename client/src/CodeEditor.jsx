@@ -1,167 +1,251 @@
-import { useEffect,useRef,useCallback, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
-import "./CodeEditor.css"
-import { v4 as uuidv4 } from 'uuid';
+import "./CodeEditor.css";
+import { useParams } from 'react-router-dom';
+import { io } from "socket.io-client";
 
-export default function CodeEditor(){
-    const [myEditor,setMyEditor] = useState()
+const SAVE_INTERVAL_MS = 2000;
 
+export default function CodeEditor() {
+    const [myEditor, setMyEditor] = useState(null);
+    const [myEditorValue, setMyEditorValue] = useState(null);
+    const [nameFile, setFileName] = useState("Untitled.txt");
+    const [extFile, setFileExt] = useState("txt");
+    const editorRef = useRef(null);
+    const [socket, setSocket] = useState();
+    const { id: codeId } = useParams();
+    const fileRef = useRef();
+  
+    useEffect(() => {
+        if (editorRef.current) {
+            const monacoEditor = monaco.editor.create(editorRef.current, {
+                value: 'Enter text',
+                language: "javascript",
+                theme: 'vs-dark',
+            });
+            setMyEditor(monacoEditor);
 
-    const wrapperRef = useCallback(()=>{
-        const value = /* set from `myEditor.getModel()`: */ `function hello() {
-            alert('Hello world!');
-        }`;
-        
-        const monacoEditor = document.getElementById("container")
-        
-        let Editor = monaco.editor.create(monacoEditor, {
-            value: 'function hello() {\n\talert("Hello world!");\n}',
-            language: "javascript",
-            theme: 'vs-dark',
-            automaticLayout: true,
-            fontSize: 14,
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-            minimap: {
-                enabled: true,
-                maxColumn: 80
-            },
-            wordWrap: 'on',
-            tabSize: 2,
-            insertSpaces: true,
-            cursorStyle: 'line',
-            cursorBlinking: 'blink',
-            smoothScrolling: true,
-            accessibilitySupport: 'on',
-            ariaLabel: 'Code editor',
-            suggestOnTriggerCharacters: true,
-            quickSuggestions: {
-                other: true,
-                comments: false,
-                strings: true
-            },
-            parameterHints: {
-                enabled: true
-            },
-            hover: {
-                enabled: true
-            },
-            formatOnType: true,
-            formatOnPaste: true,
-            codeActionsOnSave: {
-                source: {
-                    organizeImports: true
+            // Cleanup function to dispose of the editor on component unmount
+            return () => {
+                if (monacoEditor) {
+                    monacoEditor.dispose();
                 }
-            },
-            validateOnInput: true,
-            enableSchemaRequest: true
-        });
+            };
+        }
+    }, []);
 
-        
-    })
-    
-    
-    
-    const changeFileName = (e)=>{
-        fileRef.current = e.target.value
-        let ext = getFileExtension(fileRef.current)
-        console.log(ext)
-        let lang = setDocLang(ext)
-        console.log(lang)
-        let currentModel = myEditor.getModel()
+    const changeFileName = (e) => {
+        const newFileName = e.target.value;
+        const ext = getFileExtension(newFileName);
+        const lang = setDocLang(ext);
+        const currentModel = myEditor.getModel();
         const newModel = monaco.editor.createModel(currentModel.getValue(), lang);
-        myEditor.setModel(newModel);
-    }
-    let fileRef = useRef("Untitled.txt")
 
+        setFileExt(ext);
+        setFileName(newFileName);
+        myEditor.setModel(newModel);
+    };
 
     function getFileExtension(file) {
         if (typeof file !== 'string') {
-          throw new TypeError('Expected a string');
+            throw new TypeError('Expected a string');
         }
         
         const parts = file.split('.');
-        if (parts.length > 1) {
-          return parts.pop(); // Get the last part after the last dot
-        }
-        return ''; // Return empty string if there is no extension
-      }
-      
+        return parts.length > 1 ? parts.pop() : ''; // Get the last part after the last dot or return empty string
+    }
 
-      const setDocLang = (fileext) => {
-        if (!fileext) return "plaintext"; // Default to plaintext for empty or null extensions
-      
+    const setDocLang = (fileExt) => {
+        if (!fileExt) return "plaintext"; // Default to plaintext for empty or null extensions
+        
         const extToLangMap = {
-          'js': 'javascript',
-          'jsx': 'javascript',
-          'ts': 'typescript',
-          'tsx': 'typescript',
-          'py': 'python',
-          'c': 'c',
-          'cpp': 'cpp',
-          'cc': 'cpp',
-          'cs': 'csharp',
-          'java': 'java',
-          'html': 'html',
-          'htm': 'html',
-          'css': 'css',
-          'scss': 'scss',
-          'less': 'less',
-          'json': 'json',
-          'xml': 'xml',
-          'yml': 'yaml',
-          'yaml': 'yaml',
-          'php': 'php',
-          'rb': 'ruby',
-          'rs': 'rust',
-          'go': 'go',
-          'md': 'markdown',
-          'sh': 'shell',
-          'bat': 'bat',
-          'pl': 'perl',
-          'swift': 'swift',
-          'r': 'r',
-          'kt': 'kotlin',
-          'sql': 'sql',
-          'ini': 'ini',
-          'toml': 'toml'
-          // Add more file extensions and corresponding Monaco Editor languages as needed
+            'js': 'javascript',
+            'jsx': 'javascript',
+            'ts': 'typescript',
+            'tsx': 'typescript',
+            'py': 'python',
+            'c': 'c',
+            'cpp': 'cpp',
+            'cc': 'cpp',
+            'cs': 'csharp',
+            'java': 'java',
+            'html': 'html',
+            'htm': 'html',
+            'css': 'css',
+            'scss': 'scss',
+            'less': 'less',
+            'json': 'json',
+            'xml': 'xml',
+            'yml': 'yaml',
+            'yaml': 'yaml',
+            'php': 'php',
+            'rb': 'ruby',
+            'rs': 'rust',
+            'go': 'go',
+            'md': 'markdown',
+            'sh': 'shell',
+            'bat': 'bat',
+            'pl': 'perl',
+            'swift': 'swift',
+            'r': 'r',
+            'kt': 'kotlin',
+            'sql': 'sql',
+            'ini': 'ini',
+            'toml': 'toml'
+            // Add more file extensions and corresponding Monaco Editor languages as needed
         };
-      
-        return extToLangMap[fileext] || 'plaintext'; // Default to plaintext if the extension is not found
-      };
-      
+        return extToLangMap[fileExt] || 'plaintext'; // Default to plaintext if the extension is not found
+    };
+
+    useEffect(() => {
+        const s = io("http://localhost:3001");
+        setSocket(s);
+        
+        return () => {
+            s.disconnect();
+        };
+    }, []);
 
 
+    var isRemoteChange = false;
+    useEffect(() => {
+        if (!socket || !myEditor) return;
 
+        const handleReceiveChanges = (delta) => {
+            isRemoteChange = true;
+            // console.log(delta)
+            myEditor.setValue(delta.content)
+            // setFileExt(delta.fileExt);
+            // setFileName(delta.fileName);
+            // fileRef.current.value = delta.fileName;
 
+            if (delta.select) {
+        const {
+            selectionStartLineNumber, selectionStartColumn,
+            endLineNumber, endColumn
+        } = delta.select;
 
+        console.log("Received selection data:", {
+            selectionStartLineNumber,
+            selectionStartColumn,
+            endLineNumber,
+            endColumn
+        });
 
+        const newSelection = new monaco.Selection(
+            selectionStartLineNumber,
+            selectionStartColumn,
+            endLineNumber,
+            endColumn
+        );
 
-    // useEffect(()=>{
-    //     const url = 'https://localhost:5000/editData';
-    //     const data = {
-    //     _id:uuidv4(),
-    //     fileName:fileRef.current,
-    //     fileExt: getFileExtension(fileRef.current),
-    //     text: myEditor.getValue()
+        console.log("Applying selection:", newSelection);
+        myEditor.setSelection(newSelection);
+    }
+
+            isRemoteChange = false;
+        };
+
+        // const handleReceiveChangesSelection = (delta) => {
+        //     isRemoteChange = true;
+        //     console.log(delta)
+        //     // myEditor.setValue(delta.content)
+        //     // setFileExt(delta.fileExt);
+        //     // setFileName(delta.fileName);
+        //     // fileRef.current.value = delta.fileName;
+        //     isRemoteChange = false;
+
+        // };
+
+        // socket.on('receive-changes-selection',handleReceiveChanges)
+        socket.on('receive-changes', handleReceiveChanges);
+
+        myEditor.onDidChangeModelContent((event)=>{
+            if (!isRemoteChange) {
+                socket.emit("send-changes", {content:myEditor.getValue(),select:myEditor.getSelection()});
+            }
+        })
+        myEditor.onDidChangeCursorSelection((event)=>{
+            if (!isRemoteChange) {
+                socket.emit("send-changes", {content:myEditor.getValue(),select:myEditor.getSelection()});
+            }
+        })
+        
+        return () => {
+            socket.off('receive-changes', handleReceiveChanges);
+            socket.off('receive-changes', handleReceiveChanges);
+        };
+    }, [myEditor, socket]);
+
+    // useEffect(() => {
+    //     if (!socket || !myEditor) return;
+
+    //     // const interval = setInterval(() => {
+    //     //     const data = {
+    //     //         fileName: fileRef.current.value,
+    //     //         fileExt: extFile,
+    //     //         text: myEditor.getValue(),
+    //     //         pos: myEditor.getPosition()
+    //     //     };
+    //     //     socket.emit("send-changes", data);
+    //     // }, 3000);
+
+    // myEditor.onDidChangeModelContent((event)=>{
+    //     socket.emit("send-changes", event);
+    // })
+        
+    //     return () => {
+    //         clearInterval(interval);
     //     };
-    //     console.log(data)
+    // }, [socket, myEditor]);
 
-    //     fetch(url, {
-    //         method: 'POST',
-    //         headers: {
-    //             'Content-Type': 'application/json'
-    //         },
-    //         body: JSON.stringify(data)
-    //     })
-    // },[myEditor.getValue(),fileRef.current])
+    useEffect(() => {
+        if (!socket || !myEditor) return;
 
-    return(
+        const handleLoadDocument = (doc) => {
+            myEditor.setValue(doc.content);
+            // myEditor.setPosition(doc.pos);
+            // setFileExt(doc.fileExt);
+            setFileName(doc.fileName);
+            fileRef.current.value = doc.fileName;
+        };
+
+        socket.on("load-document", handleLoadDocument);
+        socket.emit("get-document", codeId);
+        // console.log(codeId)
+
+        return () => {
+            socket.off('load-document', handleLoadDocument);
+        };
+    }, [socket, myEditor, codeId]);
+
+    useEffect(()=>{
+        if (socket == null || myEditor == null) return
+        
+        const interval = setInterval(() => {
+            let data = {content:myEditor.getValue(),fileName:fileRef.current.value}
+            // console.log(data)
+            socket.emit("save-document",data)
+        }, SAVE_INTERVAL_MS);
+        
+        
+        return ()=>{
+            clearInterval(interval)
+        }
+    },[socket,myEditor])
+
+    return (
         <>
-        <label htmlFor="fileName" style={{color:"#EEEEEE"}}>Enter Name of the file: </label>
-        <input type="text" ref={fileRef} onChange={changeFileName} name="fileName"/>
-        <div className="container" id="container" defaultValue="Untitled.txt" ref={wrapperRef}></div>
+            <label htmlFor="fileName" style={{ color: "#EEEEEE" }}>Enter Name of the file: </label>
+            <input
+                type="text"
+                ref={fileRef}
+                value={nameFile}
+                onChange={changeFileName}
+                id="fileName"
+                name="fileName"
+            />
+            <div className="container" id="container" ref={editorRef}></div>
         </>
-    )
+    );
 }

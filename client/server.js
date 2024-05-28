@@ -30,16 +30,18 @@ io.on("connection",socket =>{
         socket.join(documentId)
         
         socket.emit("load-document",document.data)
-        
+
+
+        socket.on('send-changes',delta=>{
+            socket.broadcast.to(documentId).emit("receive-changes",delta)
+        })
+
         socket.on('save-document',async data =>{
             await CodeFile.findByIdAndUpdate(documentId,{data})
         })
-        socket.on('send-changes',delta=>{
-            // console.log(delta)
-            socket.broadcast.to(documentId).emit("receive-changes",delta)
-        })
     })
 })
+
 
 let defaultData = {
     fileName:"Untitled.txt",
@@ -57,7 +59,7 @@ async function findOrCreateDocument(id){
 }
 
 app.get("/",(req,res)=>{
-    res.sendFile("home.html");
+    res.sendFile("./home.html");
 })
 
 app.listen(5000,()=>{
